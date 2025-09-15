@@ -66,6 +66,7 @@ html, body{
   border-radius: 12px;
   padding: 24px;
   box-shadow: 0 10px 30px rgba(0,0,0,0.06);
+  margin-bottom: 10px;
 }
 
 .form{

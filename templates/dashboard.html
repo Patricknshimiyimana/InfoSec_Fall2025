@@ -1,12 +1,50 @@
-<!-- Information Security Fall 2025 Lab - Dashboard Short description: Greets the
-authenticated user with the lab welcome message. -->
+<!-- 
+  Information Security Fall 2025 Lab 
+  - Dashboard Short description: Greets the authenticated user with the lab welcome message. 
+  - Basic file-sharing system. 
+-->
 
-{% extends "base.html" %} {% block content %}
-<div class="card">
-  <h3>Dashboard</h3>
-  <p class="greeting">{{ greeting }}</p>
-  <div class="actions">
-    <a class="btn" href="{{ url_for('logout') }}">Logout</a>
-  </div>
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>{{ greeting }}</h1>
+
+    <hr>
+
+    <h2>Upload New File</h2>
+    <div class="card bg-light mb-4">
+        <div class="card-body">
+          <form method="post" enctype="multipart/form-data">
+            <input type="file" name="file">
+            <input type="submit" value="Upload">
+          </form>
+        </div>
+    </div>
+
+    <hr>
+
+    <h2>Uploaded Files</h2>
+    <div class="row">
+        {% for file in files %}
+        <div class="col-md-6 col-lg-4 mb-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h4 class="card-title text-truncate" title="{{ file.filename }}">Filename -- {{ file.filename }}</h4>
+                    <h4 class="card-subtitle mb-2 text-muted">Uploaded by -- {{ file.uploader_andrew_id }}</h4>
+                    <h5 class="card-text">Uploaded On -- {{ file.upload_timestamp }}</h5>
+                </div>
+                <div class="card-footer bg-transparent border-top-0">
+                    <a href="{{ url_for('download_file', filename=file.filename) }}" class="btn btn-danger btn-sm">Download</a>
+                    <a href="{{ url_for('delete_file', file_id=file.id) }}" class="btn btn-primary btn-sm">Delete</a>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="col-12">
+            <p class="text-center">No files have been uploaded yet.</p>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endblock %}

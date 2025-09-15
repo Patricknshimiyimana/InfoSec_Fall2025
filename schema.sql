@@ -7,3 +7,11 @@ CREATE TABLE IF NOT EXISTS users (
     andrew_id TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    filename TEXT NOT NULL,
+    uploader_andrew_id TEXT NOT NULL,
+    upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (uploader_andrew_id) REFERENCES users(andrew_id)
+);

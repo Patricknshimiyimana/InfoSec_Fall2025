@@ -9,17 +9,22 @@ Routes:
 - GET /          : Landing page with welcome message + Login/Register buttons.
 - GET/POST /register : Register with name, Andrew ID, and password; on success redirect to /login.
 - GET/POST /login    : Login with Andrew ID + password; on success redirect to /dashboard.
-- GET /dashboard     : Greets authenticated user: "Hello {Name}, Welcome to Lab 0 of Information Security course. Enjoy!!!"
+- GET /dashboard     : Greets authenticated user: "Hello {Name}, Welcome to Lab 2 of Information Security course."
 - GET /logout        : Clear session and return to landing page.
 """
-from flask import Flask, request, redirect, render_template, session, url_for, flash
+from flask import Flask, request, redirect, render_template, session, url_for, flash, send_from_directory
 import sqlite3, os
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("APP_SECRET_KEY", "change-me-in-production")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "infosec_lab.db")
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+
 
 # ---------------- Database Helpers ----------------
 def get_db():
@@ -59,11 +64,16 @@ def current_user():
 @app.route("/")
 def index():
     """Landing page with CMU-themed welcome and CTA buttons."""
+    if current_user():
+        return redirect(url_for('dashboard'))
     return render_template("index.html", title="Information Security Fall 2025 Lab", user=current_user())
 
 @app.route("/register", methods=["GET", "POST"])
 def register():
     """Register: capture name, Andrew ID, and password; redirect to login on success."""
+    if current_user():
+        return redirect(url_for('dashboard'))
+        
     if request.method == "POST":
         name = request.form.get("name", "").strip()
         andrew_id = request.form.get("andrew_id", "").strip().lower()
@@ -94,6 +104,9 @@ def register():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     """Login with Andrew ID and password; redirect to dashboard on success."""
+    if current_user():
+        return redirect(url_for('dashboard'))
+
     if request.method == "POST":
         andrew_id = request.form.get("andrew_id", "").strip().lower()
         password = request.form.get("password", "")
@@ -106,19 +119,70 @@ def login():
         if user:
             session["user_id"] = user["id"]
             session["user_name"] = user["name"]
+            session["user_andrew_id"] = user["andrew_id"]
             return redirect(url_for("dashboard"))
         flash("Invalid Andrew ID or password.", "error")
     return render_template("login.html", title="Login")
 
 
-@app.route("/dashboard")
+@app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
-    """Authenticated page greeting the user per the requirements."""
+    """Authenticated page greeting the user and handling file uploads."""
     user = current_user()
     if not user:
         return redirect(url_for("login"))
-    greeting = f"Hello {user['name']}, Welcome to Lab 0 of Information Security course. Enjoy!!!"
-    return render_template("dashboard.html", title="Dashboard", greeting=greeting, user=user)
+
+    if request.method == "POST":
+        if 'file' not in request.files:
+            flash('No file part')
+            return redirect(request.url)
+        file = request.files['file']
+        if file.filename == '':
+            flash('No selected file')
+            return redirect(request.url)
+        if file:
+            filename = secure_filename(file.filename)
+            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            
+            conn = get_db()
+            conn.execute(
+                "INSERT INTO files (filename, uploader_andrew_id) VALUES (?, ?)",
+                (filename, user['andrew_id'])
+            )
+            conn.commit()
+            conn.close()
+            flash("File successfully uploaded")
+            return redirect(url_for('dashboard'))
+
+    conn = get_db()
+    files = conn.execute("SELECT * FROM files ORDER BY upload_timestamp DESC").fetchall()
+    conn.close()
+    greeting = f"Hello {user['name']}, Welcome to Lab 2 of Information Security course."
+    return render_template("dashboard.html", title="Dashboard", greeting=greeting, user=user, files=files)
+
+
+@app.route('/uploads/<filename>')
+def download_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/delete/<int:file_id>')
+def delete_file(file_id):
+    user = current_user()
+    if not user:
+        return redirect(url_for('login'))
+
+    conn = get_db()
+    file = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+    if file:
+        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], file['filename']))
+        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+        conn.commit()
+        flash('File deleted successfully')
+    else:
+        flash('File not found')
+    conn.close()
+    return redirect(url_for('dashboard'))
+
 
 @app.route("/logout")
 def logout():
