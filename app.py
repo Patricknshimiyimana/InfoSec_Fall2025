@@ -15,6 +15,8 @@ Routes:
 from flask import Flask, request, redirect, render_template, session, url_for, flash, send_from_directory
 import sqlite3, os
 from werkzeug.utils import secure_filename
+# Import the necessary functions from werkzeug.security
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("APP_SECRET_KEY", "change-me-in-production")
@@ -84,10 +86,18 @@ def register():
             flash("All fields are required.", "error")
             return render_template("register.html", title="Register")
 
+        # **MODIFIED FOR SECURITY**
+        # Hash the password before storing it.
+        # generate_password_hash automatically handles salting.
+        hashed_password = generate_password_hash(password)
+
         conn = get_db()
         try:
+            # **MODIFIED FOR SECURITY**
+            # Use a parameterized query to prevent SQL injection.
             conn.execute(
-                f"INSERT INTO users (name, andrew_id, password) VALUES ('{name}', '{andrew_id}', '{password}')"
+                "INSERT INTO users (name, andrew_id, password) VALUES (?, ?, ?)",
+                (name, andrew_id, hashed_password)
             )
             conn.commit()
             flash("Registration successful! Please log in.", "success")
@@ -112,15 +122,19 @@ def login():
         password = request.form.get("password", "")
 
         conn = get_db()
-        query = f"SELECT * FROM users WHERE andrew_id = '{andrew_id}' AND password = '{password}'"
-        user = conn.execute(query).fetchone()
+        # **MODIFIED FOR SECURITY**
+        # Use a parameterized query to prevent SQL injection.
+        user = conn.execute("SELECT * FROM users WHERE andrew_id = ?", (andrew_id,)).fetchone()
         conn.close()
 
-        if user:
+        # **MODIFIED FOR SECURITY**
+        # Verify the password using check_password_hash.
+        if user and check_password_hash(user["password"], password):
             session["user_id"] = user["id"]
             session["user_name"] = user["name"]
             session["user_andrew_id"] = user["andrew_id"]
             return redirect(url_for("dashboard"))
+        
         flash("Invalid Andrew ID or password.", "error")
     return render_template("login.html", title="Login")
 
