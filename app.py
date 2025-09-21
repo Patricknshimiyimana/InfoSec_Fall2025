@@ -12,11 +12,24 @@ Routes:
 - GET /dashboard     : Greets authenticated user: "Hello {Name}, Welcome to Lab 2 of Information Security course."
 - GET /logout        : Clear session and return to landing page.
 """
-from flask import Flask, request, redirect, render_template, session, url_for, flash, send_from_directory
+from flask import Flask, request, redirect, render_template, session, url_for, flash, send_file
 import sqlite3, os
 from werkzeug.utils import secure_filename
 # Import the necessary functions from werkzeug.security
 from werkzeug.security import generate_password_hash, check_password_hash
+
+from functools import wraps
+from Crypto.Cipher import AES
+from Crypto.Util.Padding import pad, unpad
+from Crypto.Random import get_random_bytes
+import io
+
+# --- Configuration ---
+DATABASE = "infosec_lab.db"
+UPLOAD_FOLDER = "uploads"
+ALLOWED_EXTENSIONS = {"txt", "pdf", "png", "jpg", "jpeg", "gif"}
+SECRET_KEY = "supersecretkey"
+AES_KEY_FILE = "secret_aes.key"
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("APP_SECRET_KEY", "change-me-in-production")
@@ -50,6 +63,32 @@ def init_db():
 # Ensure database is initialized at import time
 os.makedirs(BASE_DIR, exist_ok=True)
 init_db()
+
+# --- AES Encryption/Decryption Helper Functions ---
+
+def load_key():
+    """Loads the AES key from the key file."""
+    if not os.path.exists(AES_KEY_FILE):
+        # Generate key if it doesn't exist
+        key = get_random_bytes(32)
+        with open(AES_KEY_FILE, "wb") as f:
+            f.write(key)
+    with open(AES_KEY_FILE, "rb") as f:
+        return f.read()
+
+def encrypt_file(file_data, key):
+    """Encrypts file data using AES."""
+    cipher = AES.new(key, AES.MODE_CBC)
+    ciphertext = cipher.encrypt(pad(file_data, AES.block_size))
+    return cipher.iv + ciphertext
+
+def decrypt_file(encrypted_data, key):
+    """Decrypts file data using AES."""
+    iv = encrypted_data[:16]
+    ciphertext = encrypted_data[16:]
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    decrypted_data = unpad(cipher.decrypt(ciphertext), AES.block_size)
+    return decrypted_data
 
 # ---------------- Utility ----------------
 def current_user():
@@ -156,7 +195,15 @@ def dashboard():
             return redirect(request.url)
         if file:
             filename = secure_filename(file.filename)
-            file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            file_data = file.read()
+
+            key = load_key()
+            encrypted_data = encrypt_file(file_data, key)
+            
+            # Save encrypted file
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+            with open(filepath, 'wb') as f:
+                f.write(encrypted_data)
             
             conn = get_db()
             conn.execute(
@@ -177,7 +224,25 @@ def dashboard():
 
 @app.route('/uploads/<filename>')
 def download_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    try:
+        key = load_key()
+        encrypted_filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        with open(encrypted_filepath, 'rb') as f:
+            encrypted_data = f.read()
+
+        decrypted_data = decrypt_file(encrypted_data, key)
+        
+        # Send the decrypted data as a downloadable file using send_file
+        return send_file(
+            io.BytesIO(decrypted_data),
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        flash(f"Error decrypting file: {e}")
+        return redirect(url_for('dashboard'))
 
 @app.route('/delete/<int:file_id>')
 def delete_file(file_id):
