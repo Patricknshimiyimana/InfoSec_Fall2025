@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+  <h3>Current OTP</h3>
+  {% if otp %}
+    <p>Timestamp: {{ otp.timestamp }}</p>
+    <p>OTP Code: {{ otp.otp_code }}</p>
+  {% else %}
+    <p>No OTP found for the current timestamp.</p>
+  {% endif %}
+</div>
+{% endblock %}

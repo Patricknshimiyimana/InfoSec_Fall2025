@@ -15,3 +15,11 @@ CREATE TABLE IF NOT EXISTS files (
     upload_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (uploader_andrew_id) REFERENCES users(andrew_id)
 );
+
+CREATE TABLE IF NOT EXISTS otp_chain (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    timestamp TEXT NOT NULL,
+    otp_code TEXT NOT NULL,
+    FOREIGN KEY (user_id) REFERENCES users(id)
+);

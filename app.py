@@ -23,6 +23,8 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 from Crypto.Random import get_random_bytes
 import io
+import datetime
+import hashlib
 
 # --- Configuration ---
 DATABASE = "infosec_lab.db"
@@ -101,6 +103,33 @@ def current_user():
     conn.close()
     return user
 
+def generate_otp_chain(user_id):
+    """Generates a chain of OTPs for a user."""
+    conn = get_db()
+    # Start with a secret seed
+    seed = f"user-{user_id}-{os.urandom(16).hex()}".encode('utf-8')
+    
+    # Generate OTPs for the next 24 hours
+    now = datetime.datetime.utcnow()
+    for i in range(1440): # 24 hours * 60 minutes
+        timestamp = (now + datetime.timedelta(minutes=i)).strftime("%Y%m%d%H%M")
+        
+        # Create a hash chain
+        otp_hash = hashlib.sha256(seed).hexdigest()
+        otp_code = str(int(otp_hash, 16))[-6:]
+        
+        # Insert into the database
+        conn.execute(
+            "INSERT INTO otp_chain (user_id, timestamp, otp_code) VALUES (?, ?, ?)",
+            (user_id, timestamp, otp_code)
+        )
+        
+        # Update the seed for the next iteration
+        seed = otp_hash.encode('utf-8')
+        
+    conn.commit()
+    conn.close()
+
 # ---------------- Routes ----------------
 @app.route("/")
 def index():
@@ -125,20 +154,21 @@ def register():
             flash("All fields are required.", "error")
             return render_template("register.html", title="Register")
 
-        # **MODIFIED FOR SECURITY**
-        # Hash the password before storing it.
-        # generate_password_hash automatically handles salting.
         hashed_password = generate_password_hash(password)
 
         conn = get_db()
         try:
-            # **MODIFIED FOR SECURITY**
-            # Use a parameterized query to prevent SQL injection.
-            conn.execute(
+            cursor = conn.cursor()
+            cursor.execute(
                 "INSERT INTO users (name, andrew_id, password) VALUES (?, ?, ?)",
                 (name, andrew_id, hashed_password)
             )
+            user_id = cursor.lastrowid
             conn.commit()
+            
+            # Generate OTP chain for the new user
+            generate_otp_chain(user_id)
+            
             flash("Registration successful! Please log in.", "success")
             return redirect(url_for("login"))
         except sqlite3.IntegrityError:
@@ -146,13 +176,11 @@ def register():
             return render_template("register.html", title="Register", name=name, andrew_id=andrew_id)
         finally:
             conn.close()
-    # GET
     return render_template("register.html", title="Register")
-
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
-    """Login with Andrew ID and password; redirect to dashboard on success."""
+    """Login with Andrew ID and password; redirect to 2FA on success."""
     if current_user():
         return redirect(url_for('dashboard'))
 
@@ -161,29 +189,74 @@ def login():
         password = request.form.get("password", "")
 
         conn = get_db()
-        # **MODIFIED FOR SECURITY**
-        # Use a parameterized query to prevent SQL injection.
         user = conn.execute("SELECT * FROM users WHERE andrew_id = ?", (andrew_id,)).fetchone()
         conn.close()
 
-        # **MODIFIED FOR SECURITY**
-        # Verify the password using check_password_hash.
         if user and check_password_hash(user["password"], password):
             session["user_id"] = user["id"]
             session["user_name"] = user["name"]
             session["user_andrew_id"] = user["andrew_id"]
-            return redirect(url_for("dashboard"))
+            return redirect(url_for("two_fa"))
         
         flash("Invalid Andrew ID or password.", "error")
     return render_template("login.html", title="Login")
 
+@app.route("/2fa", methods=["GET", "POST"])
+def two_fa():
+    """2FA verification page."""
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        otp_code = request.form.get("otp_code", "").strip()
+        now = datetime.datetime.utcnow()
+        
+        conn = get_db()
+        
+        # Check OTPs for the current minute and ±2 minutes
+        for i in range(-2, 3):
+            timestamp = (now + datetime.timedelta(minutes=i)).strftime("%Y%m%d%H%M")
+            stored_otp = conn.execute(
+                "SELECT * FROM otp_chain WHERE user_id = ? AND timestamp = ?",
+                (user["id"], timestamp)
+            ).fetchone()
+            
+            if stored_otp and stored_otp["otp_code"] == otp_code:
+                session["verified_2fa"] = True
+                conn.close()
+                return redirect(url_for("dashboard"))
+
+        conn.close()
+        flash("Invalid OTP.", "error")
+
+    return render_template("2fa.html", title="2FA Verification")
+
+@app.route("/show-otp")
+def show_otp():
+    """Debug route to show the current OTP."""
+    user = current_user()
+    if not user:
+        return redirect(url_for("login"))
+
+    now = datetime.datetime.utcnow()
+    timestamp = now.strftime("%Y%m%d%H%M")
+    
+    conn = get_db()
+    otp = conn.execute(
+        "SELECT * FROM otp_chain WHERE user_id = ? AND timestamp = ?",
+        (user["id"], timestamp)
+    ).fetchone()
+    conn.close()
+
+    return render_template("show_otp.html", title="Show OTP", otp=otp)
 
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
     """Authenticated page greeting the user and handling file uploads."""
     user = current_user()
-    if not user:
-        return redirect(url_for("login"))
+    if not user or not session.get("verified_2fa"):
+        return redirect(url_for("two_fa"))
 
     if request.method == "POST":
         if 'file' not in request.files:
@@ -200,7 +273,6 @@ def dashboard():
             key = load_key()
             encrypted_data = encrypt_file(file_data, key)
             
-            # Save encrypted file
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
             with open(filepath, 'wb') as f:
                 f.write(encrypted_data)
@@ -221,9 +293,12 @@ def dashboard():
     greeting = f"Hello {user['name']}, Welcome to Lab 2 of Information Security course."
     return render_template("dashboard.html", title="Dashboard", greeting=greeting, user=user, files=files)
 
-
 @app.route('/uploads/<filename>')
 def download_file(filename):
+    user = current_user()
+    if not user or not session.get("verified_2fa"):
+        return redirect(url_for("two_fa"))
+
     try:
         key = load_key()
         encrypted_filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
@@ -233,7 +308,6 @@ def download_file(filename):
 
         decrypted_data = decrypt_file(encrypted_data, key)
         
-        # Send the decrypted data as a downloadable file using send_file
         return send_file(
             io.BytesIO(decrypted_data),
             as_attachment=True,
@@ -247,8 +321,8 @@ def download_file(filename):
 @app.route('/delete/<int:file_id>')
 def delete_file(file_id):
     user = current_user()
-    if not user:
-        return redirect(url_for('login'))
+    if not user or not session.get("verified_2fa"):
+        return redirect(url_for('two_fa'))
 
     conn = get_db()
     file = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
@@ -262,7 +336,6 @@ def delete_file(file_id):
     conn.close()
     return redirect(url_for('dashboard'))
 
-
 @app.route("/logout")
 def logout():
     """Clear session and return to the landing page."""
@@ -271,12 +344,10 @@ def logout():
 
 # Entrypoint for local dev
 if __name__ == "__main__":
-    # Initialize database if it does not exist
     if not os.path.exists(DB_FILE):
         print("[*] Initializing database...")
         init_db()
     else:
         print("[*] Database already exists, skipping init.")
 
-    # Start Flask application
     app.run(host="0.0.0.0", port=5000, debug=True)
