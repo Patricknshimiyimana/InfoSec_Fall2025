@@ -1,0 +1,31 @@
+{% extends "_admin_base.html" %}
+
+{% block admin_content %}
+  <h2>Audit Logs</h2>
+  <table class="table">
+    <thead>
+        <tr>
+            <th onclick="sortTable(0, 'date')">Time (UTC)</th>
+            <th onclick="sortTable(1, 'string')">Actor</th>
+            <th onclick="sortTable(2, 'string')">Action</th>
+            <th onclick="sortTable(3, 'string')">Target</th>
+            <th onclick="sortTable(4, 'string')">Outcome</th>
+        </tr>
+    </thead>
+    <tbody id="logTableBody">
+        {% for log in logs %}
+        <tr>
+            <td>{{ log.timestamp }}</td>
+            <td>{{ log.actor_andrew_id }}</td>
+            <td>{{ log.action }}</td>
+            <td>{{ log.target_pretty }}</td>
+            <td>
+                <span class="chip {% if log.outcome == 'allowed' %}allowed{% else %}denied{% endif %}">
+                    {{ log.outcome }}
+                </span>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

@@ -1,0 +1,101 @@
+{% extends "_admin_base.html" %}
+
+{% block admin_content %}
+  {% if user.role == 'user_admin' %}
+    <h2>User Administration</h2>
+
+    <div class="card bg-light mb-4">
+        <div class="card-body">
+            <h3>Create New User</h3>
+            <form action="{{ url_for('create_user') }}" method="post" class="create-user-form">
+                <input type="text" name="name" placeholder="Name" required>
+                <input type="text" name="andrew_id" placeholder="Andrew ID" required>
+                <input type="password" name="password" placeholder="Temporary Password" required>
+                <select name="role">
+                    <option value="basic">Basic</option>
+                    <option value="user_admin">User Admin</option>
+                    <option value="data_admin">Data Admin</option>
+                </select>
+                <button type="submit">Create User</button>
+            </form>
+        </div>
+    </div>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Andrew ID</th>
+                <th>Role</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for u in users %}
+            <tr>
+                <td>{{ u.id }}</td>
+                <td>{{ u.name }}</td>
+                <td>{{ u.andrew_id }}</td>
+                <td>
+                    <form action="{{ url_for('assign_role', user_id=u.id) }}" method="post" style="display:inline;">
+                        <select name="role" onchange="this.form.submit()">
+                            <option value="basic" {% if u.role == 'basic' %}selected{% endif %}>Basic</option>
+                            <option value="user_admin" {% if u.role == 'user_admin' %}selected{% endif %}>User Admin</option>
+                            <option value="data_admin" {% if u.role == 'data_admin' %}selected{% endif %}>Data Admin</option>
+                        </select>
+                    </form>
+                </td>
+                <td>
+                    <button class="btn btn-sm" onclick="openRenameModal('{{ u.id }}', '{{ u.andrew_id }}', '{{ u.name }}')">Rename</button>
+                    <a href="{{ url_for('delete_user', user_id=u.id) }}" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure?')">Delete</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+  {% elif user.role == 'data_admin' %}
+    <h2>Data Administration</h2>
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Filename</th>
+                <th>Owner</th>
+                <th>Uploaded At</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for file in files %}
+            <tr>
+                <td>{{ file.filename }}</td>
+                <td>{{ file.uploader_andrew_id }}</td>
+                <td>{{ file.upload_timestamp }}</td>
+                <td>
+                    <a href="{{ url_for('download_file', filename=file.filename) }}" class="btn">Download</a>
+                    <a href="{{ url_for('delete_file', file_id=file.id) }}" class="btn btn-danger btn-sm" onclick="return confirm('Are you sure?')">Delete</a>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+  {% endif %}
+
+  <div id="renameModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="renameModalTitle">Rename User</h2>
+        <span class="close-button" onclick="closeRenameModal()">&times;</span>
+      </div>
+      <form id="renameForm" method="post">
+        <div class="modal-body">
+          <label for="new_name">New name:</label>
+          <input type="text" id="new_name" name="new_name" required>
+        </div>
+        <div class="modal-footer">
+          <button type="submit" class="btn">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}

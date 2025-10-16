@@ -150,3 +150,227 @@ input:focus{ outline: 2px solid var(--cmu-red); border-color: var(--cmu-red); }
 .toggle-password .icon-eye-off { display: none; }
 .toggle-password.is-visible .icon-eye { display: none; }
 .toggle-password.is-visible .icon-eye-off { display: inline; }
+
+/* --- Admin Styles --- */
+.nav-tabs {
+  border-bottom: 1px solid #ddd;
+}
+
+.nav-tabs .nav-link {
+  border: 1px solid transparent;
+  border-top-left-radius: .25rem;
+  border-top-right-radius: .25rem;
+  color: #c10037;
+  padding: 0.5rem 1rem;
+  text-decoration: none;
+  margin-right: 2px;
+}
+
+.nav-tabs .nav-link.active,
+.nav-tabs .nav-link:hover {
+  color: #555;
+  background-color: #fff;
+  border-color: #ddd #ddd #fff;
+}
+
+.table {
+  width: 100%;
+  margin-top: 2rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.table th,
+.table td {
+  padding: 12px 15px;
+  text-align: left;
+  border-bottom: 1px solid #e1e1e1;
+}
+
+.table th {
+  background-color: #f8f8f8;
+  font-weight: 600;
+  color: #333;
+}
+
+.table tbody tr:nth-child(even) {
+  background-color: #fdfdfd;
+}
+
+.table tbody tr:hover {
+  background-color: #f1f1f1;
+}
+
+/* Form elements within tables */
+.table input[type="text"],
+.table input[type="password"],
+.table select {
+  padding: 6px 8px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  min-width: 150px;
+}
+
+.table button,
+.table .btn {
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  font-size: 0.85rem;
+}
+
+.table .btn-danger {
+  background-color: #d9534f;
+  color: white;
+  border-color: #d43f3a;
+}
+.table .btn-danger:hover {
+  background-color: #c9302c;
+  border-color: #ac2925;
+}
+
+/* Create user form improvements */
+.create-user-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 15px;
+  align-items: center;
+}
+.create-user-form input,
+.create-user-form select {
+  padding: 8px 10px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+}
+.create-user-form button {
+  padding: 8px 15px;
+  background-color: #c10037;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.create-user-form button:hover {
+  background-color: #a0002d;
+}
+
+/* Audit Log Chips */
+.chip {
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: white;
+  display: inline-block;
+}
+
+.chip.allowed {
+  background-color: #28a745; /* Green */
+}
+
+.chip.denied {
+  background-color: #dc3545; /* Red */
+}
+
+/* --- Modal Styles for Rename Popup --- */
+.modal {
+  display: none; /* Hidden by default */
+  position: fixed; /* Stay in place */
+  z-index: 1000; /* Sit on top */
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  overflow: auto; /* Enable scroll if needed */
+  background-color: rgba(0, 0, 0, 0.6); /* Black w/ opacity */
+}
+
+.modal-content {
+  background-color: #fefefe;
+  margin: 15% auto; /* 15% from the top and centered */
+  padding: 20px;
+  border: 1px solid #888;
+  width: 80%;
+  max-width: 500px;
+  border-radius: 8px;
+  box-shadow: 0 4px 8px 0 rgba(0,0,0,0.2),0 6px 20px 0 rgba(0,0,0,0.19);
+}
+
+.modal-header {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e5e5e5;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.modal-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.close-button {
+  color: #aaa;
+  float: right;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.close-button:hover,
+.close-button:focus {
+  color: black;
+  text-decoration: none;
+}
+
+.modal-body {
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.modal-body input[type="text"] {
+  width: 100%;
+  padding: 10px;
+  font-size: 1rem;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.modal-footer {
+  padding-top: 10px;
+  text-align: right;
+}
+
+/* Sortable table styles */
+.table thead th {
+  cursor: pointer;
+  position: relative;
+}
+
+.table thead th:hover {
+  background-color: #e9e9e9;
+}
+
+.table thead th::after {
+  content: '';
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  margin-top: -8px;
+  border: 5px solid transparent;
+  opacity: 0.3;
+}
+
+.table thead th.sort-asc::after {
+  border-bottom-color: #333;
+  opacity: 1;
+}
+
+.table thead th.sort-desc::after {
+  border-top-color: #333;
+  opacity: 1;
+}

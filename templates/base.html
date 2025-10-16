@@ -1,6 +1,3 @@
-<!-- Information Security Fall 2025 Lab - Base Template
-Short description: Shared HTML layout with CMU-themed styles and messages. -->
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
@@ -30,11 +27,14 @@ Short description: Shared HTML layout with CMU-themed styles and messages. -->
         <span class="sub">CMU-Africa</span>
       </div>
       <nav class="nav">
-        {% if user %}
-        <span class="welcome">Hi, {{ user.name }}</span>
+        {% if session.user_id %}
+        <span class="welcome">Hi, {{ session.user_name }}</span>
         <a class="btn btn-outline" href="{{ url_for('dashboard') }}"
           >Dashboard</a
         >
+        {% if session.user_role in ['user_admin', 'data_admin'] %}
+        <a class="btn btn-outline" href="{{ url_for('admin_users') }}">Administration</a>
+        {% endif %}
         <a class="btn" href="{{ url_for('logout') }}">Logout</a>
         {% else %}
         <a class="btn" href="{{ url_for('login') }}">Login</a>
@@ -75,5 +75,79 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 });
 </script>
+{% block scripts %}
+<script>
+    // --- Scripts for Admin Modals and Tables ---
+
+  // RENAME MODAL LOGIC
+  const modal = document.getElementById("renameModal");
+  if (modal) {
+    const renameForm = document.getElementById("renameForm");
+    const newNameInput = document.getElementById("new_name");
+    const modalTitle = document.getElementById("renameModalTitle");
+
+    function openRenameModal(userId, andrewId, currentName) {
+      renameForm.action = `/admin/change-username/${userId}`;
+      newNameInput.value = currentName;
+      modalTitle.innerText = `Rename user: ${andrewId}`;
+      modal.style.display = "block";
+      newNameInput.focus();
+    }
+
+    function closeRenameModal() {
+      modal.style.display = "none";
+    }
+
+    window.onclick = function(event) {
+      if (event.target == modal) {
+        closeRenameModal();
+      }
+    }
+  }
+
+  // SORTABLE TABLE LOGIC
+  let lastSortedColumn = -1;
+  let sortDirection = 'asc';
+
+  function sortTable(columnIndex, type = 'string') {
+    const tableBody = document.getElementById("logTableBody");
+    if (!tableBody) return;
+
+    const rows = Array.from(tableBody.querySelectorAll("tr"));
+    
+    if (columnIndex === lastSortedColumn) {
+      sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
+    } else {
+      sortDirection = 'asc';
+    }
+
+    rows.sort((a, b) => {
+      const cellA = a.cells[columnIndex].innerText.trim();
+      const cellB = b.cells[columnIndex].innerText.trim();
+
+      let compareResult = 0;
+      if (type === 'date') {
+        compareResult = new Date(cellA) - new Date(cellB);
+      } else {
+        compareResult = cellA.localeCompare(cellB, undefined, { numeric: true });
+      }
+      return sortDirection === 'asc' ? compareResult : -compareResult;
+    });
+
+    document.querySelectorAll('.table thead th').forEach((th, index) => {
+      th.classList.remove('sort-asc', 'sort-desc');
+      if (index === columnIndex) {
+        th.classList.add(sortDirection === 'asc' ? 'sort-asc' : 'sort-desc');
+      }
+    });
+
+    tableBody.innerHTML = "";
+    rows.forEach(row => tableBody.appendChild(row));
+
+    lastSortedColumn = columnIndex;
+  }
+</script>
+</script>
+{% endblock %}
 </body>
 </html>

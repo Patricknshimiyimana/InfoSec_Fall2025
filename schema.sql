@@ -5,7 +5,8 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT NOT NULL,
     andrew_id TEXT UNIQUE NOT NULL,
-    password TEXT NOT NULL
+    password TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'basic'
 );
 
 CREATE TABLE IF NOT EXISTS files (
@@ -22,4 +23,16 @@ CREATE TABLE IF NOT EXISTS otp_chain (
     timestamp TEXT NOT NULL,
     otp_code TEXT NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id)
+);
+
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    actor_id INTEGER,
+    actor_andrew_id TEXT,
+    action TEXT NOT NULL,
+    target_id TEXT,
+    target_pretty TEXT,
+    outcome TEXT NOT NULL,
+    FOREIGN KEY (actor_id) REFERENCES users(id)
 );

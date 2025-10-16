@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <h1>Administration</h1>
+    <nav class="nav nav-tabs mb-3">
+        <a class="nav-link {% if 'admin/users' in request.path %}active{% endif %}" href="{{ url_for('admin_users') }}">Users & Data</a>
+        <a class="nav-link {% if 'admin/logs' in request.path %}active{% endif %}" href="{{ url_for('admin_logs') }}">Audit Logs</a>
+    </nav>
+
+    {% block admin_content %}{% endblock %}
+</div>
+{% endblock %}

@@ -12,7 +12,7 @@ Routes:
 - GET /dashboard     : Greets authenticated user: "Hello {Name}, Welcome to Lab 2 of Information Security course."
 - GET /logout        : Clear session and return to landing page.
 """
-from flask import Flask, request, redirect, render_template, session, url_for, flash, send_file
+from flask import Flask, request, redirect, render_template, session, url_for, flash, send_file, abort
 import sqlite3, os
 from werkzeug.utils import secure_filename
 # Import the necessary functions from werkzeug.security
@@ -25,6 +25,26 @@ from Crypto.Random import get_random_bytes
 import io
 import datetime
 import hashlib
+
+# --- Role Constants ---
+ROLE_BASIC = "basic"
+ROLE_USER_ADMIN = "user_admin"
+ROLE_DATA_ADMIN = "data_admin"
+
+# --- Policy Dictionary ---
+policy = {
+    "upload_own_file": ROLE_BASIC,
+    "download_own_file": ROLE_BASIC,
+    "delete_own_file": ROLE_BASIC,
+    "change_password": ROLE_BASIC,
+    "create_user": ROLE_USER_ADMIN,
+    "delete_user": ROLE_USER_ADMIN,
+    "assign_role": ROLE_USER_ADMIN,
+    "change_username": ROLE_USER_ADMIN,
+    "download_any_file": ROLE_DATA_ADMIN,
+    "delete_any_file": ROLE_DATA_ADMIN,
+    "read_log_file": ROLE_USER_ADMIN,
+}
 
 # --- Configuration ---
 DATABASE = "infosec_lab.db"
@@ -130,6 +150,67 @@ def generate_otp_chain(user_id):
     conn.commit()
     conn.close()
 
+# ---------------- Decorators ----------------
+def require_login_and_2fa(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = current_user()
+        if not user or not session.get("verified_2fa"):
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+def require_admin(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        user = current_user()
+        if not user or user['role'] == ROLE_BASIC:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ---------------- Guard Function ----------------
+def guard(action, target=None, forbid_self_delete=True):
+    user = current_user()
+    if not user or not session.get("verified_2fa"):
+        return False, "Login and 2FA required."
+
+    required_role = policy.get(action)
+    if not required_role:
+        return False, "Invalid action."
+
+    user_role = user['role']
+    
+    # Role hierarchy
+    role_hierarchy = {ROLE_BASIC: 1, ROLE_USER_ADMIN: 2, ROLE_DATA_ADMIN: 2}
+
+    if role_hierarchy.get(user_role, 0) < role_hierarchy.get(required_role, 0):
+        outcome = "denied"
+        if user_role in [ROLE_USER_ADMIN, ROLE_DATA_ADMIN]:
+            audit_log(action, target, outcome)
+        return False, "Permission denied."
+
+    if action == 'delete_user' and forbid_self_delete and str(user['id']) == str(target):
+        outcome = "denied"
+        audit_log(action, target, outcome)
+        return False, "You cannot delete yourself."
+
+    outcome = "allowed"
+    if user_role in [ROLE_USER_ADMIN, ROLE_DATA_ADMIN]:
+        audit_log(action, target, outcome)
+
+    return True, "Allowed"
+
+def audit_log(action, target_pretty, outcome):
+    user = current_user()
+    conn = get_db()
+    conn.execute(
+        "INSERT INTO audit_logs (actor_id, actor_andrew_id, action, target_pretty, outcome) VALUES (?, ?, ?, ?, ?)",
+        (user['id'], user['andrew_id'], action, target_pretty, outcome)
+    )
+    conn.commit()
+    conn.close()
+
 # ---------------- Routes ----------------
 @app.route("/")
 def index():
@@ -160,8 +241,8 @@ def register():
         try:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO users (name, andrew_id, password) VALUES (?, ?, ?)",
-                (name, andrew_id, hashed_password)
+                "INSERT INTO users (name, andrew_id, password, role) VALUES (?, ?, ?, ?)",
+                (name, andrew_id, hashed_password, ROLE_BASIC)
             )
             user_id = cursor.lastrowid
             conn.commit()
@@ -196,6 +277,7 @@ def login():
             session["user_id"] = user["id"]
             session["user_name"] = user["name"]
             session["user_andrew_id"] = user["andrew_id"]
+            session["user_role"] = user["role"]
             return redirect(url_for("two_fa"))
         
         flash("Invalid Andrew ID or password.", "error")
@@ -252,19 +334,23 @@ def show_otp():
     return render_template("show_otp.html", title="Show OTP", otp=otp)
 
 @app.route("/dashboard", methods=["GET", "POST"])
+@require_login_and_2fa
 def dashboard():
     """Authenticated page greeting the user and handling file uploads."""
     user = current_user()
-    if not user or not session.get("verified_2fa"):
-        return redirect(url_for("two_fa"))
 
     if request.method == "POST":
+        allowed, message = guard("upload_own_file")
+        if not allowed:
+            flash(message, "error")
+            return redirect(url_for('dashboard'))
+
         if 'file' not in request.files:
-            flash('No file part')
+            flash('No file part', 'error')
             return redirect(request.url)
         file = request.files['file']
         if file.filename == '':
-            flash('No selected file')
+            flash('No selected file', 'error')
             return redirect(request.url)
         if file:
             filename = secure_filename(file.filename)
@@ -284,20 +370,34 @@ def dashboard():
             )
             conn.commit()
             conn.close()
-            flash("File successfully uploaded")
+            flash("File successfully uploaded", "success")
             return redirect(url_for('dashboard'))
 
     conn = get_db()
-    files = conn.execute("SELECT * FROM files ORDER BY upload_timestamp DESC").fetchall()
+    files = conn.execute("SELECT * FROM files WHERE uploader_andrew_id = ? ORDER BY upload_timestamp DESC", (user['andrew_id'],)).fetchall()
     conn.close()
-    greeting = f"Hello {user['name']}, Welcome to Lab 2 of Information Security course."
+    greeting = f"Hello {user['name']}, Welcome to Lab 6 of Information Security course."
     return render_template("dashboard.html", title="Dashboard", greeting=greeting, user=user, files=files)
 
 @app.route('/uploads/<filename>')
+@require_login_and_2fa
 def download_file(filename):
     user = current_user()
-    if not user or not session.get("verified_2fa"):
-        return redirect(url_for("two_fa"))
+    conn = get_db()
+    file = conn.execute("SELECT * FROM files WHERE filename = ?", (filename,)).fetchone()
+    conn.close()
+
+    if not file:
+        abort(404)
+
+    if file['uploader_andrew_id'] == user['andrew_id']:
+        allowed, message = guard("download_own_file", filename)
+    else:
+        allowed, message = guard("download_any_file", filename)
+
+    if not allowed:
+        flash(message, "error")
+        return redirect(url_for('dashboard'))
 
     try:
         key = load_key()
@@ -315,26 +415,164 @@ def download_file(filename):
         )
 
     except Exception as e:
-        flash(f"Error decrypting file: {e}")
+        flash(f"Error decrypting file: {e}", "error")
         return redirect(url_for('dashboard'))
 
 @app.route('/delete/<int:file_id>')
+@require_login_and_2fa
 def delete_file(file_id):
     user = current_user()
-    if not user or not session.get("verified_2fa"):
-        return redirect(url_for('two_fa'))
-
     conn = get_db()
     file = conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
-    if file:
-        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], file['filename']))
-        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
-        conn.commit()
-        flash('File deleted successfully')
-    else:
-        flash('File not found')
     conn.close()
+
+    if not file:
+        flash('File not found', 'error')
+        return redirect(url_for('dashboard'))
+
+    if file['uploader_andrew_id'] == user['andrew_id']:
+        allowed, message = guard("delete_own_file", file['filename'])
+    else:
+        allowed, message = guard("delete_any_file", file['filename'])
+    
+    if not allowed:
+        flash(message, 'error')
+        return redirect(url_for('dashboard'))
+        
+    os.remove(os.path.join(app.config['UPLOAD_FOLDER'], file['filename']))
+    conn = get_db()
+    conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
+    conn.commit()
+    conn.close()
+    flash('File deleted successfully', 'success')
     return redirect(url_for('dashboard'))
+
+# ---------------- Admin Routes ----------------
+@app.route('/admin/users')
+@require_login_and_2fa
+@require_admin
+def admin_users():
+    user = current_user()
+    conn = get_db()
+    if user['role'] == ROLE_USER_ADMIN:
+        users = conn.execute("SELECT * FROM users").fetchall()
+        return render_template('admin_users.html', users=users, user=user)
+    elif user['role'] == ROLE_DATA_ADMIN:
+        files = conn.execute("SELECT * FROM files").fetchall()
+        return render_template('admin_users.html', files=files, user=user)
+    conn.close()
+    return "Invalid admin role", 400
+    
+@app.route('/admin/create-user', methods=['POST'])
+@require_login_and_2fa
+@require_admin
+def create_user():
+    name = request.form.get('name')
+    andrew_id = request.form.get('andrew_id')
+    password = request.form.get('password')
+    role = request.form.get('role')
+
+    allowed, message = guard('create_user', target=andrew_id)
+    if not allowed:
+        flash(message, 'error')
+        return redirect(url_for('admin_users'))
+    
+    hashed_password = generate_password_hash(password)
+    conn = get_db()
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (name, andrew_id, password, role) VALUES (?, ?, ?, ?)",
+            (name, andrew_id, hashed_password, role)
+        )
+        user_id = cursor.lastrowid
+        conn.commit()
+        generate_otp_chain(user_id)
+        flash(f'User {andrew_id} created successfully!', 'success')
+    except sqlite3.IntegrityError:
+        flash(f'Andrew ID {andrew_id} already exists.', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/assign-role/<int:user_id>', methods=['POST'])
+@require_login_and_2fa
+@require_admin
+def assign_role(user_id):
+    role = request.form.get('role')
+    
+    conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+
+    allowed, message = guard('assign_role', target=target_user['andrew_id'])
+    if not allowed:
+        flash(message, 'error')
+        return redirect(url_for('admin_users'))
+        
+    conn = get_db()
+    conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
+    conn.commit()
+    conn.close()
+    flash(f"Role for {target_user['andrew_id']} updated to {role}", 'success')
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/change-username/<int:user_id>', methods=['POST'])
+@require_login_and_2fa
+@require_admin
+def change_username(user_id):
+    new_name = request.form.get('new_name')
+
+    conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+
+    allowed, message = guard('change_username', target=target_user['andrew_id'])
+    if not allowed:
+        flash(message, 'error')
+        return redirect(url_for('admin_users'))
+
+    conn = get_db()
+    conn.execute("UPDATE users SET name = ? WHERE id = ?", (new_name, user_id))
+    conn.commit()
+    conn.close()
+    flash(f"Username for {target_user['andrew_id']} changed to {new_name}", 'success')
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/delete-user/<int:user_id>')
+@require_login_and_2fa
+@require_admin
+def delete_user(user_id):
+    conn = get_db()
+    target_user = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+
+    allowed, message = guard('delete_user', target=str(target_user['id']))
+    if not allowed:
+        flash(message, 'error')
+        return redirect(url_for('admin_users'))
+
+    conn = get_db()
+    conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+    flash(f"User {target_user['andrew_id']} has been deleted.", 'success')
+    return redirect(url_for('admin_users'))
+
+@app.route('/admin/logs')
+@require_login_and_2fa
+@require_admin
+def admin_logs():
+    allowed, message = guard('read_log_file')
+    if not allowed:
+        abort(403, description=message)
+        
+    conn = get_db()
+    logs = conn.execute("SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT 200").fetchall()
+    conn.close()
+    return render_template('admin_logs.html', logs=logs)
 
 @app.route("/logout")
 def logout():
